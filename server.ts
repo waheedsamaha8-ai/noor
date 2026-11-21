@@ -291,6 +291,32 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: "50mb" }));
 
+  const allowedOrigins = (process.env.ALLOWED_ORIGIN || "")
+    .split(",")
+    .map((o) => o.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+
+  if (allowedOrigins.length > 0) {
+    app.use("/api", (req, res, next) => {
+      const origin = req.headers.origin?.replace(/\/+$/, "");
+      if (origin && (allowedOrigins.includes("*") || allowedOrigins.includes(origin))) {
+        res.setHeader("Access-Control-Allow-Origin", allowedOrigins.includes("*") ? "*" : origin);
+        res.setHeader("Vary", "Origin");
+        res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+        res.setHeader(
+          "Access-Control-Allow-Headers",
+          "Content-Type,X-User-Gemini-Keys,X-User-Key-Fallback,X-Verify-Gemini-Key"
+        );
+        res.setHeader("Access-Control-Expose-Headers", "X-Gemini-Key-Source,X-Gemini-Key-Index");
+      }
+      if (req.method === "OPTIONS") {
+        res.sendStatus(204);
+        return;
+      }
+      next();
+    });
+  }
+
   const TONE_INSTRUCTIONS: Record<string, string> = {
     balanced: "بأسلوب متوازن وعميق الأثر يجمع بين إشراقة المعنى الإيماني وبلاغة التعبير القريب من القلب",
     poetic: "بأسلوب أدبي وجداني رفيع يفيض بالصور البلاغية الحية واللغة الشاعرية الشفيفة التي تلامس شغاف الروح",

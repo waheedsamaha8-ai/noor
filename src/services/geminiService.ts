@@ -1,17 +1,29 @@
-import { getCategoryFallbackTopics, getLocalFallbackImage } from './localArchive';
+import {
+  getCategoryFallbackTopics,
+  getLocalFallbackImage,
+  getLocalFallbackPost,
+} from './localArchive';
 import { SupportingCitation } from '../utils/categoryEditorial';
+import { getReciterById, parseQuranReference } from '../utils/quranData';
 import {
   buildGeminiRequestContext,
   recordGeminiResponseRotation,
 } from './aiKeyManager';
+import {
+  getApiUrl,
+  isStaticHostWithoutBackend,
+  markBackendUnavailableIfStatic,
+  safeReadJson,
+} from './apiEnvironment';
 
 async function postGeminiApi(endpoint: string, payload: unknown): Promise<Response> {
   const { headers, sentKeyIds } = buildGeminiRequestContext();
-  const response = await fetch(endpoint, {
+  const response = await fetch(getApiUrl(endpoint), {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
   });
+  markBackendUnavailableIfStatic(response);
   recordGeminiResponseRotation(response, sentKeyIds);
   return response;
 }
@@ -87,42 +99,119 @@ const getCache = (key: string) => {
         return data;
       }
     }
-  } catch (e) {
+  } catch {
     return null;
   }
   return null;
 };
 
-const setCache = (key: string, data: any) => {
+const setCache = (key: string, data: unknown) => {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(`noor_cache_${key}`, JSON.stringify({ data, timestamp: Date.now() }));
-  } catch (e) {}
+  } catch {}
 };
 
-const FALLBACK_TOPICS = [
-  "فضل الصلاة على النبي ﷺ",
-  "أهمية بر الوالدين في الإسلام",
-  "قصة صبر النبي أيوب عليه السلام",
-  "عظمة الاستغفار وأثره في الرزق",
-  "كيفية تدبر القرآن الكريم"
+const FALLBACK_MORNING_ADHKAR = [
+  "أصبحنا وأصبح الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير",
+  "اللهم بك أصبحنا وبك أمسينا، وبك نحيا وبك نموت وإليك النشور",
+  "سبحان الله وبحمده، عدد خلقه، ورضا نفسه، وزنة عرشه، ومداد كلماته",
+  "اللهم إني أسألك علماً نافعاً، ورزقاً طيباً، وعملاً متقبلاً",
+  "يا حي يا قيوم برحمتك أستغيث، أصلح لي شأني كله ولا تكلني إلى نفسي طرفة عين",
 ];
 
-const FALLBACK_DHIKR = "سبحان الله وبحمده، عدد خلقه، ورضا نفسه، وزنة عرشه، ومداد كلماته";
+const FALLBACK_EVENING_ADHKAR = [
+  "أمسينا وأمسى الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير",
+  "اللهم بك أمسينا وبك أصبحنا، وبك نحيا وبك نموت وإليك المصير",
+  "رضيت بالله رباً، وبالإسلام ديناً، وبمحمد صلى الله عليه وسلم نبياً",
+  "حسبي الله لا إله إلا هو عليه توكلت وهو رب العرش العظيم",
+  "اللهم إني أسألك العفو والعافية في الدنيا والآخرة",
+];
+
+const getLocalDailyDhikr = (period: 'morning' | 'evening'): string => {
+  const pool = period === 'morning' ? FALLBACK_MORNING_ADHKAR : FALLBACK_EVENING_ADHKAR;
+  const dayOfYear = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
+  return pool[dayOfYear % pool.length];
+};
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length)));
+  }
+  return btoa(binary);
+}
+
+async function fetchDirectQuranRecitation(params: {
+  surahNumber?: number;
+  surahName?: string;
+  verseNumber?: string;
+  verseReference?: string;
+  verseText?: string;
+  reciter?: string;
+}): Promise<QuranRecitationResponse | null> {
+  const reciter = getReciterById(params.reciter);
+  const parsed = parseQuranReference(params);
+  if (!parsed) return null;
+
+  try {
+    const clips: Array<{ ayah: number; base64: string; mimeType: string }> = [];
+    for (let ayah = parsed.ayahStart; ayah <= parsed.ayahEnd; ayah++) {
+      const metaResp = await fetch(
+        `https://api.alquran.cloud/v1/ayah/${parsed.surah}:${ayah}/${reciter.id}`
+      );
+      if (!metaResp.ok) continue;
+      const meta = await safeReadJson<{ data?: { audio?: string; audioSecondary?: string[] } }>(metaResp);
+      const audioUrl = meta?.data?.audio || meta?.data?.audioSecondary?.[0];
+      if (!audioUrl) continue;
+
+      const audioResp = await fetch(audioUrl);
+      if (!audioResp.ok) continue;
+      const arrBuf = await audioResp.arrayBuffer();
+      clips.push({
+        ayah,
+        base64: uint8ArrayToBase64(new Uint8Array(arrBuf)),
+        mimeType: audioResp.headers.get('content-type') || 'audio/mpeg',
+      });
+    }
+
+    if (clips.length === 0) return null;
+    return {
+      resolved: true,
+      surah: parsed.surah,
+      ayahStart: parsed.ayahStart,
+      ayahEnd: parsed.ayahEnd,
+      surahNameAr: parsed.surahNameAr,
+      reciterId: reciter.id,
+      reciterName: reciter.name,
+      clips,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export async function generateReligiousContent(
   topic: string,
   tone: PostTone = "balanced",
   category: string = "موضوع تلقائي"
 ): Promise<GeneratedPost> {
-  const response = await postGeminiApi("/api/gemini/content", { topic, tone, category });
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.error || "فشل في معالجة البيانات. يرجى المحاولة مرة أخرى.");
+  if (isStaticHostWithoutBackend()) {
+    return getLocalFallbackPost(category, topic);
   }
 
-  return data as GeneratedPost;
+  const response = await postGeminiApi("/api/gemini/content", { topic, tone, category });
+  const data = await safeReadJson<GeneratedPost & { error?: string }>(response);
+
+  if (!response.ok || !data) {
+    if (response.status === 405 || !data) {
+      return getLocalFallbackPost(category, topic);
+    }
+    throw new Error(data.error || "فشل في معالجة البيانات. يرجى المحاولة مرة أخرى.");
+  }
+
+  return data;
 }
 
 export async function generateReligiousImageWithMeta(
@@ -130,10 +219,19 @@ export async function generateReligiousImageWithMeta(
   aspectRatio: AspectRatio = "1:1",
   theme: Theme = "classic"
 ): Promise<GeneratedImageResult> {
+  if (isStaticHostWithoutBackend()) {
+    return {
+      imageUrl: getLocalFallbackImage(prompt),
+      isFallback: true,
+      fallbackReason: "static-host",
+      message: "تم اختيار مشهد فوتوغرافي إسلامي ملائم من المكتبة المحلية عالية الجودة.",
+    };
+  }
+
   try {
     const response = await postGeminiApi("/api/gemini/image", { prompt, aspectRatio, theme });
+    const data = await safeReadJson<{ imageUrl?: string; fallbackReason?: string; error?: string }>(response);
 
-    const data = await response.json();
     if (response.ok && data?.imageUrl) {
       return {
         imageUrl: data.imageUrl,
@@ -169,6 +267,10 @@ export async function suggestTopics(category?: string, forceRefresh: boolean = f
   const cacheKey = `topics_${category || 'default'}`;
   const fallbackList = getCategoryFallbackTopics(category);
 
+  if (isStaticHostWithoutBackend()) {
+    return forceRefresh ? [...fallbackList].sort(() => Math.random() - 0.5) : fallbackList;
+  }
+
   if (!forceRefresh) {
     const cached = getCache(cacheKey);
     if (Array.isArray(cached) && cached.length > 0) return cached;
@@ -176,21 +278,18 @@ export async function suggestTopics(category?: string, forceRefresh: boolean = f
 
   try {
     const response = await postGeminiApi("/api/gemini/topics", { category });
-
-    const data = await response.json();
-    if (!response.ok) {
-      if (forceRefresh && response.status === 429) {
-        // Rotate fallback topics smoothly instead of throwing a disruptive crash banner
-        const rotated = [...fallbackList].sort(() => Math.random() - 0.5);
-        return rotated;
+    const data = await safeReadJson<{ topics?: string[] }>(response);
+    if (!response.ok || !data) {
+      if (forceRefresh) {
+        return [...fallbackList].sort(() => Math.random() - 0.5);
       }
       return fallbackList;
     }
 
-    const topics = Array.isArray(data?.topics) && data.topics.length > 0 ? data.topics : fallbackList;
+    const topics = Array.isArray(data.topics) && data.topics.length > 0 ? data.topics : fallbackList;
     setCache(cacheKey, topics);
     return topics;
-  } catch (error: any) {
+  } catch (error) {
     console.warn("Suggestions fallback used:", error);
     return forceRefresh ? [...fallbackList].sort(() => Math.random() - 0.5) : fallbackList;
   }
@@ -201,24 +300,28 @@ export async function getDailyDhikr(): Promise<string> {
   const dateStr = now.toISOString().split('T')[0];
   const period = now.getHours() < 12 ? 'morning' : 'evening';
   const cacheKey = `daily_dhikr_${dateStr}_${period}`;
+  const fallbackDhikr = getLocalDailyDhikr(period);
+
+  if (isStaticHostWithoutBackend()) {
+    return fallbackDhikr;
+  }
 
   const cached = getCache(cacheKey);
   if (cached) return cached;
 
   try {
     const response = await postGeminiApi("/api/gemini/daily-dhikr", { period });
-
     if (!response.ok) {
-      return FALLBACK_DHIKR;
+      return fallbackDhikr;
     }
 
-    const data = await response.json();
-    const dhikr = data?.dhikr?.trim() || FALLBACK_DHIKR;
+    const data = await safeReadJson<{ dhikr?: string }>(response);
+    const dhikr = data?.dhikr?.trim() || fallbackDhikr;
     setCache(cacheKey, dhikr);
     return dhikr;
   } catch (error) {
     console.warn("Daily dhikr fallback used:", error);
-    return FALLBACK_DHIKR;
+    return fallbackDhikr;
   }
 }
 
@@ -228,25 +331,40 @@ export async function generateReligiousSeries(
   tone: PostTone = "balanced",
   category: string = "موضوع تلقائي"
 ): Promise<GeneratedPost[]> {
-  const response = await postGeminiApi("/api/gemini/series", { topic, count, tone, category });
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.error || "فشل في توليد السلسلة.");
+  if (isStaticHostWithoutBackend()) {
+    const safeCount = Math.max(1, Math.min(5, count));
+    const topics = getCategoryFallbackTopics(category);
+    return Array.from({ length: safeCount }, (_, idx) =>
+      getLocalFallbackPost(category, idx === 0 ? topic : topics[idx % topics.length] || topic)
+    );
   }
 
-  return Array.isArray(data?.posts) ? data.posts : [];
+  const response = await postGeminiApi("/api/gemini/series", { topic, count, tone, category });
+  const data = await safeReadJson<{ posts?: GeneratedPost[]; error?: string }>(response);
+  if (!response.ok || !data) {
+    if (response.status === 405 || !data) {
+      return [getLocalFallbackPost(category, topic)];
+    }
+    throw new Error(data.error || "فشل في توليد السلسلة.");
+  }
+
+  return Array.isArray(data.posts) ? data.posts : [];
 }
 
 export async function refineReligiousContent(post: GeneratedPost, action: RefineAction): Promise<GeneratedPost> {
-  const response = await postGeminiApi("/api/gemini/refine", { post, action });
+  if (isStaticHostWithoutBackend()) {
+    throw new Error(
+      "ميزة التحسين الفوري بالذكاء الاصطناعي تتطلب تشغيل الخادم الخلفي (Node.js). يمكنك تعديل النص يدوياً من تبويب «تعديل النص»."
+    );
+  }
 
-  const data = await response.json();
-  if (!response.ok) {
+  const response = await postGeminiApi("/api/gemini/refine", { post, action });
+  const data = await safeReadJson<GeneratedPost & { error?: string }>(response);
+  if (!response.ok || !data) {
     throw new Error(data?.error || "تعذر تحسين الصياغة حالياً.");
   }
 
-  return data as GeneratedPost;
+  return data;
 }
 
 export async function fetchQuranRecitation(params: {
@@ -257,19 +375,24 @@ export async function fetchQuranRecitation(params: {
   verseText?: string;
   reciter?: string;
 }): Promise<QuranRecitationResponse | null> {
+  if (isStaticHostWithoutBackend()) {
+    return fetchDirectQuranRecitation(params);
+  }
+
   try {
-    const response = await fetch("/api/quran/recitation", {
+    const response = await fetch(getApiUrl("/api/quran/recitation"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
     });
-    if (!response.ok) {
-      return null;
+    if (markBackendUnavailableIfStatic(response) || !response.ok) {
+      return fetchDirectQuranRecitation(params);
     }
-    return (await response.json()) as QuranRecitationResponse;
+    const data = await safeReadJson<QuranRecitationResponse>(response);
+    return data || fetchDirectQuranRecitation(params);
   } catch (error) {
     console.warn("Quran Recitation Fetch Error:", error);
-    return null;
+    return fetchDirectQuranRecitation(params);
   }
 }
 
@@ -306,6 +429,10 @@ export async function generateSpiritualAudio(
   const normalizedText = text.trim();
   if (!normalizedText) return null;
 
+  if (isStaticHostWithoutBackend()) {
+    return null;
+  }
+
   const cacheKey = `${type}:${voiceName || 'default'}:${normalizedText}`;
   const cached = ttsClientCache.get(cacheKey);
   if (cached) return cached;
@@ -331,7 +458,7 @@ export async function generateSpiritualAudio(
       return null;
     }
 
-    const data = await response.json();
+    const data = await safeReadJson<{ audioUrl?: string }>(response);
     const audioUrl = data?.audioUrl || null;
     if (audioUrl) {
       if (ttsClientCache.size >= 30) {

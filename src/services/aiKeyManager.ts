@@ -368,8 +368,18 @@ export async function verifyUserGeminiKey(apiKey: string): Promise<{
   quotaExceeded?: boolean;
   message: string;
 }> {
+  const { getApiUrl, isStaticHostWithoutBackend, markBackendUnavailableIfStatic, safeReadJson } =
+    await import('./apiEnvironment');
+
+  if (isStaticHostWithoutBackend()) {
+    return {
+      valid: false,
+      message: 'فحص المفاتيح يتطلب ربط التطبيق بخادم Node.js خلفي (غير متوفر على الاستضافة الثابتة GitHub Pages).',
+    };
+  }
+
   try {
-    const response = await fetch('/api/gemini/verify-key', {
+    const response = await fetch(getApiUrl('/api/gemini/verify-key'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -377,7 +387,13 @@ export async function verifyUserGeminiKey(apiKey: string): Promise<{
       },
       body: JSON.stringify({}),
     });
-    const data = await response.json();
+    if (markBackendUnavailableIfStatic(response)) {
+      return {
+        valid: false,
+        message: 'فحص المفاتيح يتطلب تشغيل الخادم الخلفي (Node.js).',
+      };
+    }
+    const data = await safeReadJson<{ valid?: boolean; quotaExceeded?: boolean; message?: string }>(response);
     return {
       valid: Boolean(data?.valid),
       quotaExceeded: Boolean(data?.quotaExceeded),

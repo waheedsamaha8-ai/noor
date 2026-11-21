@@ -10,6 +10,12 @@ import {
   buildReflectionWithCitationSpeech,
   formatCitationForSpeech,
 } from '../utils/categoryEditorial';
+import {
+  getApiUrl,
+  isStaticHostWithoutBackend,
+  markBackendUnavailableIfStatic,
+  safeReadJson,
+} from './apiEnvironment';
 
 export type VideoAudioMode = 'verse' | 'full' | 'reflection';
 export type VideoMotionStyle = 'kenburns' | 'waveform' | 'static';
@@ -2214,7 +2220,7 @@ export async function exportFastStudioMp4(params: {
   const overlayPngBase64 = overlayCanvas.toDataURL('image/png');
 
   onStatus?.('جاري دمج الفيديو عالي الجودة مع الصوت بصيغة MP4...', 55);
-  const response = await fetch('/api/video/render-mp4', {
+  const response = await fetch(getApiUrl('/api/video/render-mp4'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -2229,8 +2235,12 @@ export async function exportFastStudioMp4(params: {
     }),
   });
 
+  if (markBackendUnavailableIfStatic(response)) {
+    throw new Error('خدمة تصدير الخادم غير متوفرة على الاستضافة الثابتة؛ يرجى استخدام التصدير المباشر من المتصفح.');
+  }
+
   if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
+    const err = await safeReadJson<{ error?: string }>(response);
     throw new Error(err?.error || 'تعذر تصدير الفيديو حالياً.');
   }
 
@@ -2376,16 +2386,16 @@ export async function exportAnimatedWaveformMp4(params: {
   } catch {}
   await audioCtx.close().catch(() => {});
 
-  // If browser recorded WebM, seamlessly remux on server into universal H.264/AAC MP4!
-  if (!recordedBlob.type.includes('mp4')) {
+  // If browser recorded WebM and a backend is available, seamlessly remux on server into universal H.264/AAC MP4!
+  if (!recordedBlob.type.includes('mp4') && !isStaticHostWithoutBackend()) {
     onStatus?.('جاري تحويل الفيديو إلى صيغة MP4 متوافقة مع واتساب وجميع الأجهزة...', 88);
     try {
-      const remuxResp = await fetch('/api/video/remux-mp4', {
+      const remuxResp = await fetch(getApiUrl('/api/video/remux-mp4'), {
         method: 'POST',
         headers: { 'Content-Type': 'video/webm' },
         body: recordedBlob,
       });
-      if (remuxResp.ok) {
+      if (!markBackendUnavailableIfStatic(remuxResp) && remuxResp.ok) {
         onStatus?.('تم تجهيز الفيديو بدقة عالية وصيغة MP4!', 100);
         return await remuxResp.blob();
       }

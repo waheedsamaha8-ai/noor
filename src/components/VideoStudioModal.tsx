@@ -41,6 +41,7 @@ import {
   prepareStudioAudio,
   renderLayeredVideoCanvases,
 } from '../services/videoStudioService';
+import { isStaticHostWithoutBackend } from '../services/apiEnvironment';
 
 interface VideoStudioModalProps {
   isOpen: boolean;
@@ -597,6 +598,7 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
       let blob: Blob;
       const layers = layersRef.current;
       const needsAnimatedExport =
+        isStaticHostWithoutBackend() ||
         motionStyle === 'waveform' ||
         (activeRevealMode !== 'none' && Boolean(reflectionPlan));
 
