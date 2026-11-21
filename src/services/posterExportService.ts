@@ -72,6 +72,7 @@ export interface PosterRenderConfig {
   cardAccentColor: string;
   cardFrameStyle: 'clean' | 'gold-border';
   showTopic: boolean;
+  showReflection?: boolean;
   showVersePrefix: boolean;
   showVerseText: boolean;
   showVerseReference: boolean;
@@ -379,9 +380,10 @@ function measurePosterTypography(
       : [];
 
   ctx.font = `500 ${bodyPx}px ${config.fontFamilyCss}`;
-  const bodyLines = config.post.content?.trim()
-    ? wrapArabic(ctx, config.post.content.trim(), maxWidth, isTallStory ? 9 : 7)
-    : [];
+  const bodyLines =
+    config.showReflection !== false && config.post.content?.trim()
+      ? wrapArabic(ctx, config.post.content.trim(), maxWidth, isTallStory ? 9 : 7)
+      : [];
 
   const rawVerse = config.post.verseText?.trim() || '';
   const hasVerse = Boolean(rawVerse) && config.showVerseText;

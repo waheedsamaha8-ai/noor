@@ -8,11 +8,12 @@ import { getReciterById } from '../utils/quranData';
 import {
   SupportingCitation,
   buildReflectionWithCitationSpeech,
+  formatCitationForSpeech,
 } from '../utils/categoryEditorial';
 
 export type VideoAudioMode = 'verse' | 'full' | 'reflection';
 export type VideoMotionStyle = 'kenburns' | 'waveform' | 'static';
-export type VideoVisualLayout = 'verse-synced' | 'cinema' | 'match';
+export type VideoVisualLayout = 'simple-vertical' | 'verse-synced' | 'cinema' | 'match';
 export type ReflectionRevealMode = 'sentences' | 'words' | 'none';
 
 export interface AudioSegmentTimeline {
@@ -62,6 +63,7 @@ export interface VideoRenderConfig {
   fontSize: number;
   overlayOpacity: number;
   showTopic: boolean;
+  showReflection?: boolean;
   showVersePrefix: boolean;
   showVerseText: boolean;
   showVerseReference: boolean;
@@ -251,6 +253,7 @@ export async function prepareStudioAudio(options: {
   reciterId: string;
   audioMode: VideoAudioMode;
   activeCitation?: SupportingCitation | null;
+  includeReflectionInAudio?: boolean;
   includeCitationInAudio?: boolean;
   onStatus?: (msg: string) => void;
 }): Promise<PreparedStudioAudio> {
@@ -259,6 +262,7 @@ export async function prepareStudioAudio(options: {
     reciterId,
     audioMode,
     activeCitation = null,
+    includeReflectionInAudio,
     includeCitationInAudio = true,
     onStatus,
   } = options;
@@ -276,10 +280,17 @@ export async function prepareStudioAudio(options: {
     let sourceNote = '';
     let reflectionSpokenText = '';
 
-    const wantsVerse = (audioMode === 'verse' || audioMode === 'full') && Boolean(post.verseText?.trim());
-    const wantsReflection =
-      audioMode === 'reflection' ||
-      (audioMode === 'full' && Boolean(post.content?.trim() || post.topic?.trim()));
+    const hasVerseContent = Boolean(post.verseText?.trim());
+    const baseReflection = (post.content?.trim() || post.topic?.trim() || '').trim();
+    const hasCitationContent = Boolean(activeCitation?.text?.trim());
+
+    const wantsVerse = (audioMode === 'verse' || audioMode === 'full') && hasVerseContent;
+    const wantsReflectionText =
+      typeof includeReflectionInAudio === 'boolean'
+        ? includeReflectionInAudio && Boolean(baseReflection)
+        : (audioMode === 'reflection' || audioMode === 'full') && Boolean(baseReflection);
+    const wantsCitationText = Boolean(includeCitationInAudio && hasCitationContent);
+    const wantsSpokenNarration = wantsReflectionText || wantsCitationText;
 
     if (wantsVerse) {
       onStatus?.(`جاري جلب التلاوة القرآنية بصوت ${reciter.shortName}...`);
@@ -306,7 +317,7 @@ export async function prepareStudioAudio(options: {
           const decoded = await audioCtx.decodeAudioData(arrBuf.slice(0));
           segments.push({
             buffer: decoded,
-            pauseAfterSec: idx < quranResp.clips.length - 1 ? 0.35 : wantsReflection ? 0.7 : 0,
+            pauseAfterSec: idx < quranResp.clips.length - 1 ? 0.35 : wantsSpokenNarration ? 0.7 : 0,
             kind: 'verse',
           });
         }
@@ -319,7 +330,7 @@ export async function prepareStudioAudio(options: {
           const decoded = await audioCtx.decodeAudioData(base64ToArrayBuffer(ttsUrl));
           segments.push({
             buffer: decoded,
-            pauseAfterSec: wantsReflection ? 0.65 : 0,
+            pauseAfterSec: wantsSpokenNarration ? 0.65 : 0,
             kind: 'verse',
           });
           sourceNote = 'إلقاء صوتي روحاني هادئ للنص';
@@ -327,33 +338,34 @@ export async function prepareStudioAudio(options: {
       }
     }
 
-    if (wantsReflection) {
-      // Read reflection body + supporting citation (when enabled) so caption sync matches spoken words 1:1
-      const baseReflection = (post.content?.trim() || post.topic?.trim() || '').trim();
-      const willSpeakCitation = Boolean(includeCitationInAudio && activeCitation?.text?.trim());
-      const reflectionText = buildReflectionWithCitationSpeech(
-        baseReflection,
-        activeCitation,
-        willSpeakCitation
-      );
-      if (reflectionText) {
+    if (wantsSpokenNarration) {
+      // Build narration matching the user's independent Reflection & Supporting Citation switches
+      const spokenText = wantsReflectionText
+        ? buildReflectionWithCitationSpeech(baseReflection, activeCitation, wantsCitationText)
+        : formatCitationForSpeech(activeCitation);
+
+      if (spokenText) {
         onStatus?.(
-          willSpeakCitation
+          wantsReflectionText && wantsCitationText
             ? 'جاري توليد قراءة روحانية للخاطرة والشاهد الداعم...'
-            : 'جاري توليد قراءة روحانية للخاطرة الإيمانية...'
+            : wantsReflectionText
+            ? 'جاري توليد قراءة روحانية للخاطرة الإيمانية...'
+            : 'جاري توليد قراءة روحانية للشاهد الداعم...'
         );
-        const ttsUrl = await generateSpiritualAudio(reflectionText, 'reflection', 'Kore');
+        const ttsUrl = await generateSpiritualAudio(spokenText, 'reflection', 'Kore');
         if (ttsUrl) {
           const decoded = await audioCtx.decodeAudioData(base64ToArrayBuffer(ttsUrl));
           segments.push({ buffer: decoded, pauseAfterSec: 0, kind: 'reflection' });
-          reflectionSpokenText = reflectionText;
+          reflectionSpokenText = spokenText;
+          const narrationLabel =
+            wantsReflectionText && wantsCitationText
+              ? 'قراءة الخاطرة والشاهد'
+              : wantsReflectionText
+              ? 'قراءة صوتية للخاطرة'
+              : 'قراءة الشاهد الداعم';
           sourceNote = isAuthenticQuran
-            ? willSpeakCitation
-              ? `${sourceNote} + قراءة الخاطرة والشاهد`
-              : `${sourceNote} + قراءة صوتية للخاطرة`
-            : willSpeakCitation
-            ? 'قراءة صوتية روحانية كاملة للخاطرة والشاهد الداعم'
-            : 'قراءة صوتية روحانية كاملة للمنشور';
+            ? `${sourceNote} + ${narrationLabel}`
+            : `إلقاء صوتي روحاني (${narrationLabel})`;
         }
       }
     }
@@ -361,7 +373,7 @@ export async function prepareStudioAudio(options: {
     // If neither produced audio yet (e.g., verse-only mode on a post with no verse), read the post content
     if (segments.length === 0) {
       const baseFallback = (post.content?.trim() || post.topic?.trim() || post.verseText?.trim() || '').trim();
-      const willSpeakCitation = Boolean(includeCitationInAudio && activeCitation?.text?.trim());
+      const willSpeakCitation = Boolean(includeCitationInAudio && hasCitationContent);
       const fallbackText = buildReflectionWithCitationSpeech(
         baseFallback,
         activeCitation,
@@ -741,7 +753,9 @@ export async function renderLayeredVideoCanvases(config: VideoRenderConfig): Pro
   const isPortrait = height > width;
   const isLandscape = width > height;
 
-  if (config.visualLayout === 'verse-synced') {
+  if (config.visualLayout === 'simple-vertical') {
+    renderSimpleVerticalVerseOverlay(ctx, width, height, config, isPortrait, isLandscape);
+  } else if (config.visualLayout === 'verse-synced') {
     renderVerseOnlyOverlay(ctx, width, height, config, isPortrait, isLandscape);
   } else if (config.visualLayout === 'cinema' || config.layoutTemplate === 'overlay') {
     renderCinemaOverlay(ctx, width, height, config, isPortrait, isLandscape);
@@ -905,7 +919,7 @@ function renderCinemaOverlay(
   const citSourcePx = Math.round((isPortrait ? 21 : 19) * scaleFactor);
 
   const hasTopic = config.showTopic && Boolean(config.post.topic?.trim());
-  const hasContent = Boolean(config.post.content?.trim());
+  const hasContent = config.showReflection !== false && Boolean(config.post.content?.trim());
   const hasVerse = Boolean(config.post.verseText?.trim()) && config.showVerseText;
   const hasPrefix = hasVerse && config.showVersePrefix;
   const hasRef =
@@ -1252,7 +1266,10 @@ function renderCardOverlay(
     const topicLines = config.showTopic && config.post.topic ? wrapArabicLines(ctx, config.post.topic, maxTextW, 2) : [];
 
     ctx.font = `500 ${bodySize}px ${config.fontFamilyCss}`;
-    const contentLines = config.post.content ? wrapArabicLines(ctx, config.post.content, maxTextW, 6) : [];
+    const contentLines =
+      config.showReflection !== false && config.post.content
+        ? wrapArabicLines(ctx, config.post.content, maxTextW, 6)
+        : [];
 
     ctx.font = `700 ${verseSize}px ${config.fontFamilyCss}`;
     const formattedVerse = config.post.verseText
@@ -1677,6 +1694,125 @@ function renderVerseOnlyOverlay(
     ctx.shadowBlur = 8;
     ctx.font = `700 ${Math.round(23 * scaleFactor)}px ${config.fontFamilyCss}`;
     ctx.fillStyle = 'rgba(240, 211, 122, 0.94)';
+    ctx.fillText(footerParts.join('  •  '), width / 2, footerY);
+    ctx.restore();
+  }
+}
+
+function renderSimpleVerticalVerseOverlay(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  config: VideoRenderConfig,
+  isPortrait: boolean,
+  isLandscape: boolean
+) {
+  // Pure full-bleed photograph matching the post's clean on-image Quranic text look:
+  // Zero borders, zero frosted boxes, zero header badges, zero reflection/citation overlays.
+  const grad = ctx.createLinearGradient(0, height * 0.52, 0, height);
+  grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  grad.addColorStop(0.45, 'rgba(0, 0, 0, 0.22)');
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0.62)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, height * 0.52, width, height * 0.48);
+
+  const scaleFactor = Math.min(width, height) / 1080;
+  const rawVerse = config.post.verseText?.trim() || '';
+  const hasVerse = Boolean(rawVerse) && config.showVerseText;
+  const displayVerse = hasVerse ? rawVerse : (!rawVerse && config.showTopic ? config.post.topic?.trim() || '' : '');
+  const showPrefix = hasVerse && config.showVersePrefix;
+  const prefixText = (config.post.versePrefix || 'قال تعالى:').trim();
+
+  if (!displayVerse && !showPrefix) return;
+
+  const sidePad = Math.round(width * (isLandscape ? 0.11 : 0.068));
+  const textMaxW = width - sidePad * 2;
+  const baseVersePx = Math.max(44, Math.min(78, Math.round(config.fontSize * 2.55 * scaleFactor)));
+  const basePrefixPx = Math.max(28, Math.round(baseVersePx * 0.54));
+
+  const fitSimpleText = (shrink: number) => {
+    const vSize = Math.round(baseVersePx * shrink);
+    const pSize = Math.round(basePrefixPx * shrink);
+    ctx.font = `700 ${vSize}px ${config.fontFamilyCss}`;
+    const verseLines = displayVerse ? wrapArabicLines(ctx, displayVerse, textMaxW, isPortrait ? 6 : 4) : [];
+    const verseLineH = vSize * (displayVerse.length > 110 ? 1.56 : 1.48);
+    const prefixH = showPrefix ? pSize * 1.45 + Math.round(18 * scaleFactor * shrink) : 0;
+    const totalH = prefixH + verseLines.length * verseLineH;
+    return { vSize, pSize, verseLines, verseLineH, prefixH, totalH };
+  };
+
+  const maxBlockH = height * (isPortrait ? 0.40 : 0.46);
+  const scales = [1, 0.9, 0.82, 0.74, 0.66];
+  let fitted = fitSimpleText(scales[scales.length - 1]);
+  for (const s of scales) {
+    const attempt = fitSimpleText(s);
+    fitted = attempt;
+    if (attempt.totalH <= maxBlockH) break;
+  }
+
+  // Optional whisper-subtle footer only when user explicitly toggled reciter credit or entered a signature
+  const footerParts: string[] = [];
+  if (config.showReciterCredit && config.reciterLabel) {
+    footerParts.push(config.isAuthenticQuran ? `تلاوة: ${config.reciterLabel}` : config.reciterLabel);
+  }
+  if (config.pageSignature.trim()) {
+    footerParts.push(config.pageSignature.trim());
+  }
+
+  const bottomPad = Math.round((isPortrait ? 84 : 56) * scaleFactor) + (footerParts.length > 0 ? Math.round(44 * scaleFactor) : 0);
+  let cursorY = height - bottomPad - fitted.totalH;
+
+  // Render crisp white Arabic calligraphy with solid black contour + deep drop shadow (matching post image look)
+  const drawOutlinedLine = (text: string, y: number, fontStr: string, strokeW: number, shadowBlur: number) => {
+    ctx.save();
+    ctx.font = fontStr;
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.lineWidth = strokeW;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.92)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.92)';
+    ctx.shadowBlur = shadowBlur;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = Math.round(4 * scaleFactor);
+    ctx.strokeText(text, width / 2, y);
+
+    ctx.shadowBlur = Math.round(shadowBlur * 0.45);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(text, width / 2, y);
+    ctx.restore();
+  };
+
+  if (showPrefix && prefixText) {
+    const py = cursorY + fitted.pSize * 0.65;
+    drawOutlinedLine(
+      prefixText,
+      py,
+      `700 ${fitted.pSize}px ${config.fontFamilyCss}`,
+      Math.max(4, Math.round(fitted.pSize * 0.14)),
+      Math.round(10 * scaleFactor)
+    );
+    cursorY += fitted.prefixH;
+  }
+
+  for (const line of fitted.verseLines) {
+    const ly = cursorY + fitted.verseLineH * 0.5;
+    drawOutlinedLine(
+      line,
+      ly,
+      `700 ${fitted.vSize}px ${config.fontFamilyCss}`,
+      Math.max(5, Math.round(fitted.vSize * 0.12)),
+      Math.round(16 * scaleFactor)
+    );
+    cursorY += fitted.verseLineH;
+  }
+
+  if (footerParts.length > 0) {
+    const footerY = height - Math.round((isPortrait ? 44 : 28) * scaleFactor);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+    ctx.shadowBlur = 8;
+    ctx.font = `700 ${Math.round(22 * scaleFactor)}px ${config.fontFamilyCss}`;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
     ctx.fillText(footerParts.join('  •  '), width / 2, footerY);
     ctx.restore();
   }

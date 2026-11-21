@@ -1377,13 +1377,11 @@ ${profile.narrationBlueprint}
           enforce: "post",
           transform(code, id) {
             if (id.replace(/\\/g, "/").endsWith("/vite/dist/client/client.mjs")) {
-              return {
-                code: code.replace(
-                  "transport.connect(createHMRHandler(handleMessage));",
-                  "/* HMR WebSocket disabled in middleware mode */"
-                ),
-                map: null,
-              };
+              const patched = code.replace(
+                /const transport = normalizeModuleRunnerTransport\(\s*\(\(\) => \{[\s\S]*?\}\)\(\)\s*\);/,
+                "const transport = normalizeModuleRunnerTransport({ async connect() {}, async disconnect() {}, send() {} });"
+              );
+              return { code: patched, map: null };
             }
           },
         },

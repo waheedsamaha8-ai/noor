@@ -36,6 +36,7 @@ interface ImageExportModalProps {
   cardFrameStyle: 'clean' | 'gold-border';
   overlayOpacity: number;
   showTopic: boolean;
+  showReflection?: boolean;
   showVersePrefix: boolean;
   showVerseText: boolean;
   showVerseReference: boolean;
@@ -60,6 +61,7 @@ export const ImageExportModal: React.FC<ImageExportModalProps> = ({
   cardFrameStyle,
   overlayOpacity,
   showTopic,
+  showReflection = true,
   showVersePrefix,
   showVerseText,
   showVerseReference,
@@ -109,6 +111,7 @@ export const ImageExportModal: React.FC<ImageExportModalProps> = ({
     cardAccentColor,
     cardFrameStyle,
     showTopic,
+    showReflection,
     showVersePrefix,
     showVerseText,
     showVerseReference,
@@ -161,6 +164,7 @@ export const ImageExportModal: React.FC<ImageExportModalProps> = ({
     cardFrameStyle,
     overlayOpacity,
     showTopic,
+    showReflection,
     showVersePrefix,
     showVerseText,
     showVerseReference,

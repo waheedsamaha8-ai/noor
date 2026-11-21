@@ -217,7 +217,7 @@ export default function App() {
   const [cardAccentColor, setCardAccentColor] = useState<string>('#5A5A40');
   const [presetTab, setPresetTab] = useState<'artworks' | 'gradients'>('artworks');
   const [activeManuscriptId, setActiveManuscriptId] = useState<string | null>(null);
-  const [studioControlTab, setStudioControlTab] = useState<'style' | 'artworks' | 'contrast'>('style');
+  const [studioControlTab, setStudioControlTab] = useState<'style' | 'edit' | 'artworks' | 'contrast'>('style');
   const [studioArtworkCategory, setStudioArtworkCategory] = useState<ArtworkCategory>('all');
   const [postHistory, setPostHistory] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -233,7 +233,6 @@ export default function App() {
   const [isSeriesMode, setIsSeriesMode] = useState(false);
   const [seriesPosts, setSeriesPosts] = useState<GeneratedPost[]>([]);
   const [currentSeriesIndex, setCurrentSeriesIndex] = useState(0);
-  const [isEditing, setIsEditing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
   const [isNarrationPlaying, setIsNarrationPlaying] = useState(false);
@@ -308,7 +307,7 @@ export default function App() {
           : null;
       return (
         (showTopic ? (targetPost.topic?.length || 0) : 0) +
-        (targetPost.content?.length || 0) +
+        (showReflection ? (targetPost.content?.length || 0) : 0) +
         (showVerseTextInText ? (targetPost.verseText?.length || 0) : 0) +
         (targetActiveCitation ? targetActiveCitation.text.length : 0)
       );
@@ -389,6 +388,7 @@ export default function App() {
   const [autoEnhanceContrast, setAutoEnhanceContrast] = useState(true);
   const [dynamicOverlayOpacity, setDynamicOverlayOpacity] = useState<number>(0.35);
   const [showTopic, setShowTopic] = useState(true);
+  const [showReflection, setShowReflection] = useState(true);
   const [showVersePrefixInText, setShowVersePrefixInText] = useState(true);
   const [showVerseReferenceInText, setShowVerseReferenceInText] = useState(true);
   const [showVerseTextInText, setShowVerseTextInText] = useState(true);
@@ -455,6 +455,7 @@ export default function App() {
     fontSize,
     showVerseOnImage,
     showTopic,
+    showReflection,
     showVerseTextInText,
     showSupportingCitationOnCard,
     activeCitationIndex,
@@ -1366,6 +1367,7 @@ export default function App() {
         cardFrameStyle,
         overlayOpacity: getDynamicOverlayOpacity(),
         showTopic,
+        showReflection,
         showVersePrefix: showVersePrefixInText,
         showVerseText: showVerseTextInText,
         showVerseReference: showVerseReferenceInText,
@@ -2054,19 +2056,6 @@ export default function App() {
                           <RefreshCw className={cn("w-4 h-4", generatingImage && "animate-spin")} />
                         </button>
                       )}
-                      <button 
-                        onClick={() => setIsEditing(!isEditing)}
-                        className={cn(
-                          "px-3 py-2.5 min-h-[44px] border rounded-xl transition-all flex items-center justify-center gap-1.5 text-xs font-bold cursor-pointer whitespace-nowrap shrink-0",
-                          isEditing 
-                            ? "bg-brand-olive text-white border-brand-olive" 
-                            : (darkMode ? "bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800" : "bg-white border-brand-olive/15 text-brand-ink/70 hover:bg-brand-olive/10")
-                        )}
-                        title="تعديل يدوي للنصوص"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                        <span>تعديل النص</span>
-                      </button>
                     </div>
                   </div>
 
@@ -2290,185 +2279,20 @@ export default function App() {
                       </div>
                     )}
 
-                    {isEditing && post && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className={cn(
-                          "p-4 sm:p-5 border rounded-2xl shadow-lg space-y-3.5",
-                          darkMode ? "bg-zinc-900 border-zinc-800" : "bg-white border-brand-olive/15"
-                        )}
-                      >
-                        <div className="flex items-center justify-between border-b border-brand-olive/10 dark:border-zinc-800 pb-2.5">
-                          <span className="text-xs font-bold text-brand-olive dark:text-brand-gold">تعديل النصوص يدوياً</span>
-                          <button
-                            type="button"
-                            onClick={() => setIsEditing(false)}
-                            className="text-xs font-bold opacity-70 hover:opacity-100 px-2 py-1"
-                          >
-                            إغلاق
-                          </button>
-                        </div>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <label className="text-xs font-bold opacity-70">العنوان</label>
-                            <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-                              <input type="checkbox" checked={showTopic} onChange={(e) => setShowTopic(e.target.checked)} className="w-4 h-4 accent-brand-olive" />
-                              <span>عرض العنوان</span>
-                            </label>
-                          </div>
-                          <input 
-                            type="text" 
-                            value={post.topic}
-                            onChange={(e) => setPost({...post, topic: e.target.value})}
-                            className={cn(
-                              "w-full p-3 border rounded-xl text-base sm:text-sm focus:outline-none",
-                              darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
-                            )}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold opacity-70">نص الخاطرة</label>
-                          <textarea 
-                            value={post.content}
-                            onChange={(e) => setPost({...post, content: e.target.value})}
-                            rows={4}
-                            className={cn(
-                              "w-full p-3 border rounded-xl text-base sm:text-sm focus:outline-none resize-none",
-                              darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
-                            )}
-                          />
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <label className="text-xs font-bold opacity-70">مقدمة الآية / الحديث</label>
-                              <input type="checkbox" checked={showVersePrefixInText} onChange={(e) => setShowVersePrefixInText(e.target.checked)} className="w-4 h-4 accent-brand-olive" />
-                            </div>
-                            <input 
-                              type="text" 
-                              value={post.versePrefix || 'قال تعالى:'}
-                              onChange={(e) => setPost({...post, versePrefix: e.target.value})}
-                              className={cn(
-                                "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none",
-                                darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
-                              )}
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <label className="text-xs font-bold opacity-70">مرجع الآية / الحديث</label>
-                              <input type="checkbox" checked={showVerseReferenceInText} onChange={(e) => setShowVerseReferenceInText(e.target.checked)} className="w-4 h-4 accent-brand-olive" />
-                            </div>
-                            <input 
-                              type="text" 
-                              value={post.verseReference || ''}
-                              onChange={(e) => setPost({...post, verseReference: e.target.value})}
-                              className={cn(
-                                "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none",
-                                darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
-                              )}
-                              placeholder="مثال: (البقرة : 255)"
-                            />
-                          </div>
-                          <div className="space-y-1.5 sm:col-span-2">
-                            <div className="flex items-center justify-between">
-                              <label className="text-xs font-bold opacity-70">نص الآية / الحديث</label>
-                              <input type="checkbox" checked={showVerseTextInText} onChange={(e) => setShowVerseTextInText(e.target.checked)} className="w-4 h-4 accent-brand-olive" />
-                            </div>
-                            <input 
-                              type="text" 
-                              value={post.verseText || ''}
-                              onChange={(e) => setPost({...post, verseText: e.target.value})}
-                              className={cn(
-                                "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none",
-                                darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
-                              )}
-                            />
-                          </div>
-                        </div>
-
-                        {activeCitation && (
-                          <div className="pt-3 border-t border-brand-olive/10 dark:border-zinc-800 space-y-2.5">
-                            <div className="flex items-center justify-between">
-                              <label className="text-xs font-bold text-brand-olive dark:text-brand-gold">
-                                تعديل الشاهد الداعم ({activeCitation.label})
-                              </label>
-                              <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={showSupportingCitationOnCard}
-                                  onChange={(e) => setShowSupportingCitationOnCard(e.target.checked)}
-                                  className="w-4 h-4 accent-brand-olive"
-                                />
-                                <span>عرض على البطاقة</span>
-                              </label>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                              <input
-                                type="text"
-                                value={activeCitation.prefix || ''}
-                                onChange={(e) => {
-                                  const updated = activeCitations.map((c, i) =>
-                                    i === safeCitationIndex ? { ...c, prefix: e.target.value } : c
-                                  );
-                                  setPost({ ...post, citations: updated });
-                                }}
-                                placeholder="مقدمة الشاهد (مثال: قال رسول الله ﷺ:)"
-                                className={cn(
-                                  "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none",
-                                  darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
-                                )}
-                              />
-                              <input
-                                type="text"
-                                value={activeCitation.source || ''}
-                                onChange={(e) => {
-                                  const updated = activeCitations.map((c, i) =>
-                                    i === safeCitationIndex ? { ...c, source: e.target.value } : c
-                                  );
-                                  setPost({ ...post, citations: updated });
-                                }}
-                                placeholder="المصدر أو القائل"
-                                className={cn(
-                                  "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none",
-                                  darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
-                                )}
-                              />
-                              <textarea
-                                rows={2}
-                                value={activeCitation.text}
-                                onChange={(e) => {
-                                  const updated = activeCitations.map((c, i) =>
-                                    i === safeCitationIndex ? { ...c, text: e.target.value } : c
-                                  );
-                                  setPost({ ...post, citations: updated });
-                                }}
-                                placeholder="نص الشاهد (في الشعر استخدم / للفصل بين الشطرين)"
-                                className={cn(
-                                  "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none resize-none sm:col-span-2",
-                                  darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
-                                )}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </motion.div>
-                    )}
-
-                    {/* Organized 3-Tab Visual Design Studio Panel (Compact & Thumb-Friendly on Mobile) */}
+                    {/* Organized 4-Tab Visual Design & Text Studio Panel (Compact & Thumb-Friendly on Mobile) */}
                     <div className={cn(
                       "p-4 sm:p-6 border rounded-3xl shadow-sm space-y-5",
                       darkMode ? "bg-zinc-900 border-zinc-800" : "bg-white border-brand-olive/15"
                     )}>
                       {/* Studio Control Tabs */}
                       <div className={cn(
-                        "grid grid-cols-3 gap-1.5 p-1 rounded-2xl",
+                        "flex items-center gap-1 p-1 rounded-2xl overflow-x-auto no-scrollbar",
                         darkMode ? "bg-zinc-950" : "bg-brand-cream/60"
                       )}>
                         {(
                           [
                             { id: 'style', label: 'التنسيق والخط' },
+                            { id: 'edit', label: 'تعديل النص' },
                             { id: 'artworks', label: `اللوحات (${LOCAL_ISLAMIC_ARTWORKS.length})` },
                             { id: 'contrast', label: 'مستشعر التباين' },
                           ] as const
@@ -2478,7 +2302,7 @@ export default function App() {
                             type="button"
                             onClick={() => setStudioControlTab(tab.id)}
                             className={cn(
-                              "py-2.5 px-2 min-h-[42px] rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+                              "flex-1 min-w-fit py-2.5 px-2.5 sm:px-3 min-h-[42px] rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1",
                               studioControlTab === tab.id
                                 ? "bg-brand-olive text-white shadow-sm"
                                 : darkMode
@@ -2486,10 +2310,181 @@ export default function App() {
                                   : "text-brand-ink/70 hover:text-brand-ink"
                             )}
                           >
-                            {tab.label}
+                            {tab.id === 'edit' && <Edit3 className="w-3.5 h-3.5 shrink-0" />}
+                            <span>{tab.label}</span>
                           </button>
                         ))}
                       </div>
+
+                      {studioControlTab === 'edit' && post && (
+                        <div className="space-y-3.5">
+                          <div className="flex items-center justify-between border-b border-brand-olive/10 dark:border-zinc-800 pb-2.5">
+                            <span className="text-xs font-bold text-brand-olive dark:text-brand-gold">تعديل النصوص يدوياً</span>
+                            <button
+                              type="button"
+                              onClick={() => setStudioControlTab('style')}
+                              className="text-xs font-bold opacity-70 hover:opacity-100 px-2 py-1 cursor-pointer"
+                            >
+                              العودة للتنسيق
+                            </button>
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-bold opacity-70">العنوان</label>
+                              <label className="flex items-center gap-1.5 text-[11px] cursor-pointer select-none">
+                                <input type="checkbox" checked={showTopic} onChange={(e) => setShowTopic(e.target.checked)} className="w-4 h-4 accent-brand-olive" />
+                                <span>عرض العنوان</span>
+                              </label>
+                            </div>
+                            <input
+                              type="text"
+                              value={post.topic}
+                              onChange={(e) => setPost({ ...post, topic: e.target.value })}
+                              className={cn(
+                                "w-full p-3 border rounded-xl text-base sm:text-sm focus:outline-none",
+                                darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
+                              )}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-bold opacity-70">نص الخاطرة</label>
+                              <label className="flex items-center gap-1.5 text-[11px] cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={showReflection}
+                                  onChange={(e) => setShowReflection(e.target.checked)}
+                                  className="w-4 h-4 accent-brand-olive"
+                                />
+                                <span>عرض الخاطرة</span>
+                              </label>
+                            </div>
+                            <textarea
+                              value={post.content}
+                              onChange={(e) => setPost({ ...post, content: e.target.value })}
+                              rows={4}
+                              className={cn(
+                                "w-full p-3 border rounded-xl text-base sm:text-sm focus:outline-none resize-none",
+                                darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
+                              )}
+                            />
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs font-bold opacity-70">مقدمة الآية / الحديث</label>
+                                <input type="checkbox" checked={showVersePrefixInText} onChange={(e) => setShowVersePrefixInText(e.target.checked)} className="w-4 h-4 accent-brand-olive" />
+                              </div>
+                              <input
+                                type="text"
+                                value={post.versePrefix || 'قال تعالى:'}
+                                onChange={(e) => setPost({ ...post, versePrefix: e.target.value })}
+                                className={cn(
+                                  "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none",
+                                  darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
+                                )}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs font-bold opacity-70">مرجع الآية / الحديث</label>
+                                <input type="checkbox" checked={showVerseReferenceInText} onChange={(e) => setShowVerseReferenceInText(e.target.checked)} className="w-4 h-4 accent-brand-olive" />
+                              </div>
+                              <input
+                                type="text"
+                                value={post.verseReference || ''}
+                                onChange={(e) => setPost({ ...post, verseReference: e.target.value })}
+                                className={cn(
+                                  "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none",
+                                  darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
+                                )}
+                                placeholder="مثال: (البقرة : 255)"
+                              />
+                            </div>
+                            <div className="space-y-1.5 sm:col-span-2">
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs font-bold opacity-70">نص الآية / الحديث</label>
+                                <input type="checkbox" checked={showVerseTextInText} onChange={(e) => setShowVerseTextInText(e.target.checked)} className="w-4 h-4 accent-brand-olive" />
+                              </div>
+                              <input
+                                type="text"
+                                value={post.verseText || ''}
+                                onChange={(e) => setPost({ ...post, verseText: e.target.value })}
+                                className={cn(
+                                  "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none",
+                                  darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
+                                )}
+                              />
+                            </div>
+                          </div>
+
+                          {activeCitation && (
+                            <div className="pt-3 border-t border-brand-olive/10 dark:border-zinc-800 space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs font-bold text-brand-olive dark:text-brand-gold">
+                                  تعديل الشاهد الداعم ({activeCitation.label})
+                                </label>
+                                <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={showSupportingCitationOnCard}
+                                    onChange={(e) => setShowSupportingCitationOnCard(e.target.checked)}
+                                    className="w-4 h-4 accent-brand-olive"
+                                  />
+                                  <span>عرض على البطاقة</span>
+                                </label>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <input
+                                  type="text"
+                                  value={activeCitation.prefix || ''}
+                                  onChange={(e) => {
+                                    const updated = activeCitations.map((c, i) =>
+                                      i === safeCitationIndex ? { ...c, prefix: e.target.value } : c
+                                    );
+                                    setPost({ ...post, citations: updated });
+                                  }}
+                                  placeholder="مقدمة الشاهد (مثال: قال رسول الله ﷺ:)"
+                                  className={cn(
+                                    "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none",
+                                    darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
+                                  )}
+                                />
+                                <input
+                                  type="text"
+                                  value={activeCitation.source || ''}
+                                  onChange={(e) => {
+                                    const updated = activeCitations.map((c, i) =>
+                                      i === safeCitationIndex ? { ...c, source: e.target.value } : c
+                                    );
+                                    setPost({ ...post, citations: updated });
+                                  }}
+                                  placeholder="المصدر أو القائل"
+                                  className={cn(
+                                    "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none",
+                                    darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
+                                  )}
+                                />
+                                <textarea
+                                  rows={2}
+                                  value={activeCitation.text}
+                                  onChange={(e) => {
+                                    const updated = activeCitations.map((c, i) =>
+                                      i === safeCitationIndex ? { ...c, text: e.target.value } : c
+                                    );
+                                    setPost({ ...post, citations: updated });
+                                  }}
+                                  placeholder="نص الشاهد (في الشعر استخدم / للفصل بين الشطرين)"
+                                  className={cn(
+                                    "w-full p-2.5 border rounded-xl text-base sm:text-sm focus:outline-none resize-none sm:col-span-2",
+                                    darkMode ? "bg-zinc-950 border-zinc-800 text-white" : "bg-brand-cream/30 border-brand-olive/15"
+                                  )}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {studioControlTab === 'style' && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -3302,18 +3297,20 @@ export default function App() {
                                       {post.topic}
                                     </h3>
                                   )}
-                                  <p
-                                    className={cn(
-                                      "whitespace-pre-wrap font-medium",
-                                      compactText ? "text-xs sm:text-sm leading-relaxed" : "text-sm sm:text-base leading-relaxed"
-                                    )}
-                                    style={{
-                                      color: isLightManuscript ? (activeManuscript?.textColor || '#221D15') : 'rgba(255,255,255,0.95)',
-                                      fontFamily: getSelectedFontFamily(fontFamily)
-                                    }}
-                                  >
-                                    {post.content}
-                                  </p>
+                                  {showReflection && post.content?.trim() && (
+                                    <p
+                                      className={cn(
+                                        "whitespace-pre-wrap font-medium",
+                                        compactText ? "text-xs sm:text-sm leading-relaxed" : "text-sm sm:text-base leading-relaxed"
+                                      )}
+                                      style={{
+                                        color: isLightManuscript ? (activeManuscript?.textColor || '#221D15') : 'rgba(255,255,255,0.95)',
+                                        fontFamily: getSelectedFontFamily(fontFamily)
+                                      }}
+                                    >
+                                      {post.content}
+                                    </p>
+                                  )}
                                   {post.verseText && (showVersePrefixInText || showVerseReferenceInText || showVerseTextInText) && (
                                     <div
                                       className={cn("border-t space-y-1.5", compactText ? "pt-2" : "pt-3")}
@@ -3462,13 +3459,15 @@ export default function App() {
                             {post?.topic}
                           </h3>
                         )}
-                        <p 
-                          id="post-content" 
-                          className="text-base sm:text-lg leading-relaxed whitespace-pre-wrap animate-target font-medium" 
-                          style={{ color: '#333333', fontFamily: getSelectedFontFamily(fontFamily) }}
-                        >
-                          {post?.content}
-                        </p>
+                        {showReflection && post?.content?.trim() && (
+                          <p 
+                            id="post-content" 
+                            className="text-base sm:text-lg leading-relaxed whitespace-pre-wrap animate-target font-medium" 
+                            style={{ color: '#333333', fontFamily: getSelectedFontFamily(fontFamily) }}
+                          >
+                            {post?.content}
+                          </p>
+                        )}
                         {post?.verseText && (showVersePrefixInText || showVerseReferenceInText || showVerseTextInText) && (
                           <div id="post-verse-section" className="pt-4 border-t border-gray-100 space-y-2 animate-target">
                             {showVersePrefixInText && (
@@ -4152,6 +4151,7 @@ export default function App() {
             fontSize={fontSize}
             overlayOpacity={getDynamicOverlayOpacity()}
             showTopic={showTopic}
+            showReflection={showReflection}
             showVersePrefix={showVersePrefixInText}
             showVerseText={showVerseTextInText}
             showVerseReference={showVerseReferenceInText}
@@ -4181,6 +4181,7 @@ export default function App() {
             cardFrameStyle={cardFrameStyle}
             overlayOpacity={getDynamicOverlayOpacity()}
             showTopic={showTopic}
+            showReflection={showReflection}
             showVersePrefix={showVersePrefixInText}
             showVerseText={showVerseTextInText}
             showVerseReference={showVerseReferenceInText}

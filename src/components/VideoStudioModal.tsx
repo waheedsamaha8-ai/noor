@@ -58,6 +58,7 @@ interface VideoStudioModalProps {
   fontSize: number;
   overlayOpacity: number;
   showTopic: boolean;
+  showReflection?: boolean;
   showVersePrefix: boolean;
   showVerseText: boolean;
   showVerseReference: boolean;
@@ -102,6 +103,7 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
   fontSize,
   overlayOpacity,
   showTopic,
+  showReflection = true,
   showVersePrefix,
   showVerseText,
   showVerseReference,
@@ -124,7 +126,12 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
   const [showReciterCredit, setShowReciterCredit] = useState(true);
   const [localCitationIndex, setLocalCitationIndex] = useState(activeCitationIndex);
   const [localShowCitation, setLocalShowCitation] = useState(showSupportingCitation);
-  const [includeCitationInAudio, setIncludeCitationInAudio] = useState(true);
+  const [includeReflectionInAudio, setIncludeReflectionInAudio] = useState<boolean>(
+    !post.verseText?.trim()
+  );
+  const [includeCitationInAudio, setIncludeCitationInAudio] = useState<boolean>(
+    !post.verseText?.trim()
+  );
 
   const citations = post.citations || [];
   const effectiveCitationIndex = onSelectCitationIndex ? activeCitationIndex : localCitationIndex;
@@ -235,7 +242,12 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
     setVisualLayout(layout);
     setExportedVideoUrl(null);
     setExportedVideoBlob(null);
-    if (
+    if (layout === 'simple-vertical') {
+      if (aspectRatio !== '9:16') {
+        onChangeAspectRatio('9:16');
+      }
+      setShowReciterCredit(false);
+    } else if (
       layout === 'verse-synced' &&
       reflectionRevealMode !== 'none' &&
       audioMode === 'verse' &&
@@ -243,6 +255,47 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
       post.content?.trim()
     ) {
       setAudioMode('full');
+      setIncludeReflectionInAudio(true);
+    }
+  };
+
+  const handleSelectAudioPreset = (mode: VideoAudioMode) => {
+    stopPreviewPlayback();
+    setExportedVideoUrl(null);
+    setExportedVideoBlob(null);
+    setAudioMode(mode);
+    if (mode === 'verse') {
+      setIncludeReflectionInAudio(false);
+      setIncludeCitationInAudio(false);
+    } else if (mode === 'full') {
+      setIncludeReflectionInAudio(true);
+      if (activeCitation) setIncludeCitationInAudio(true);
+    } else {
+      setIncludeReflectionInAudio(true);
+    }
+  };
+
+  const handleToggleReflectionAudio = (checked: boolean) => {
+    stopPreviewPlayback();
+    setExportedVideoUrl(null);
+    setExportedVideoBlob(null);
+    setIncludeReflectionInAudio(checked);
+    if (checked && audioMode === 'verse') {
+      setAudioMode('full');
+    } else if (!checked && audioMode === 'full' && !includeCitationInAudio) {
+      setAudioMode('verse');
+    } else if (!checked && audioMode === 'reflection' && !includeCitationInAudio && post.verseText?.trim()) {
+      setAudioMode('verse');
+    }
+  };
+
+  const handleToggleCitationAudio = (checked: boolean) => {
+    stopPreviewPlayback();
+    setExportedVideoUrl(null);
+    setExportedVideoBlob(null);
+    setIncludeCitationInAudio(checked);
+    if (!checked && !includeReflectionInAudio && audioMode !== 'verse' && post.verseText?.trim()) {
+      setAudioMode('verse');
     }
   };
 
@@ -258,6 +311,7 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
       post.content?.trim()
     ) {
       setAudioMode('full');
+      setIncludeReflectionInAudio(true);
     }
   };
 
@@ -298,12 +352,12 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
 
   // Track whether citation changes affect the audio track (avoids re-fetching verse-only recitations)
   const spokenCitationForTrack =
-    audioMode !== 'verse' && effectiveShowCitation && includeCitationInAudio ? activeCitation : null;
+    includeCitationInAudio && activeCitation?.text?.trim() ? activeCitation : null;
   const spokenCitationKey = spokenCitationForTrack
     ? `${spokenCitationForTrack.type}|${spokenCitationForTrack.prefix || ''}|${spokenCitationForTrack.text}|${spokenCitationForTrack.source || ''}`
     : '';
 
-  // Load studio audio whenever modal opens or reciter/audioMode/spoken citation changes
+  // Load studio audio whenever modal opens or reciter/audioMode/spoken toggles change
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -319,6 +373,7 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
       reciterId: selectedReciter,
       audioMode,
       activeCitation: spokenCitationForTrack,
+      includeReflectionInAudio,
       includeCitationInAudio: Boolean(spokenCitationForTrack),
       onStatus: (msg) => {
         if (!cancelled) setAudioStatus(msg);
@@ -344,7 +399,7 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, selectedReciter, audioMode, post, spokenCitationKey]);
+  }, [isOpen, selectedReciter, audioMode, includeReflectionInAudio, post, spokenCitationKey]);
 
   // Build crisp 1080p layers whenever visual settings or resolved audio metadata changes
   useEffect(() => {
@@ -366,6 +421,7 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
       fontSize,
       overlayOpacity,
       showTopic,
+      showReflection,
       showVersePrefix,
       showVerseText,
       showVerseReference,
@@ -434,6 +490,7 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
     fontSize,
     overlayOpacity,
     showTopic,
+    showReflection,
     showVersePrefix,
     showVerseText,
     showVerseReference,
@@ -869,7 +926,7 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
                 </div>
               </div>
 
-              {/* 2. Audio Content Mode */}
+              {/* 2. Audio Content Mode + Independent Spoken Switches */}
               <div className="space-y-2.5">
                 <label className="text-xs font-bold flex items-center gap-1.5 text-brand-olive dark:text-brand-gold">
                   <Music className="w-4 h-4" />
@@ -883,28 +940,39 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
                         label: 'تلاوة الآية بصوت القارئ',
                         hint: 'خاشعة ومختصرة للريلز',
                         disabled: !post.verseText?.trim(),
+                        active:
+                          audioMode === 'verse' && !includeReflectionInAudio && !includeCitationInAudio,
                       },
                       {
                         id: 'full',
-                        label: 'الآية + النص والشاهد',
+                        label: 'الآية + الخاطرة والشاهد',
                         hint: 'تلاوة ثم إلقاء الخاطرة والشاهد',
-                        disabled: !post.verseText?.trim() || !post.content?.trim(),
+                        disabled: !post.verseText?.trim() || (!post.content?.trim() && !activeCitation),
+                        active:
+                          (audioMode === 'full' || (audioMode === 'verse' && (includeReflectionInAudio || includeCitationInAudio))),
                       },
                       {
                         id: 'reflection',
-                        label: 'إلقاء النص والشاهد',
-                        hint: 'صوت روحاني للخاطرة والشاهد',
-                        disabled: !post.content?.trim() && !post.topic?.trim(),
+                        label: 'إلقاء النص فقط',
+                        hint: 'صوت روحاني بدون تلاوة الآية',
+                        disabled: !post.content?.trim() && !post.topic?.trim() && !activeCitation,
+                        active: audioMode === 'reflection',
                       },
-                    ] as Array<{ id: VideoAudioMode; label: string; hint: string; disabled: boolean }>
+                    ] as Array<{
+                      id: VideoAudioMode;
+                      label: string;
+                      hint: string;
+                      disabled: boolean;
+                      active: boolean;
+                    }>
                   ).map((mode) => (
                     <button
                       key={mode.id}
                       type="button"
                       disabled={mode.disabled || exporting}
-                      onClick={() => setAudioMode(mode.id)}
+                      onClick={() => handleSelectAudioPreset(mode.id)}
                       className={`p-3 rounded-xl border text-right transition-all cursor-pointer disabled:opacity-40 ${
-                        audioMode === mode.id
+                        mode.active
                           ? darkMode
                             ? 'bg-brand-gold/15 border-brand-gold text-brand-gold'
                             : 'bg-brand-olive/10 border-brand-olive text-brand-olive'
@@ -917,6 +985,51 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
                       <p className="text-[10px] opacity-70 mt-0.5">{mode.hint}</p>
                     </button>
                   ))}
+                </div>
+
+                {/* Independent Spoken Audio Toggles for Reflection & Supporting Citation */}
+                <div
+                  className={`p-3 rounded-xl border grid grid-cols-1 sm:grid-cols-2 gap-2.5 ${
+                    darkMode
+                      ? 'bg-zinc-900/75 border-zinc-800'
+                      : 'bg-brand-cream/35 border-brand-olive/15'
+                  }`}
+                >
+                  <label className="flex items-center justify-between gap-2 text-xs font-semibold cursor-pointer select-none">
+                    <span className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        disabled={exporting || (!post.content?.trim() && !post.topic?.trim())}
+                        checked={includeReflectionInAudio}
+                        onChange={(e) => handleToggleReflectionAudio(e.target.checked)}
+                        className="w-4 h-4 accent-brand-olive rounded cursor-pointer"
+                      />
+                      <span>قراءة الخاطرة صوتياً</span>
+                    </span>
+                    <span className="text-[10px] opacity-65">
+                      {includeReflectionInAudio ? 'مقروءة' : 'صامتة'}
+                    </span>
+                  </label>
+
+                  <label
+                    className={`flex items-center justify-between gap-2 text-xs font-semibold cursor-pointer select-none ${
+                      !activeCitation ? 'opacity-45 pointer-events-none' : ''
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        disabled={exporting || !activeCitation}
+                        checked={Boolean(activeCitation && includeCitationInAudio)}
+                        onChange={(e) => handleToggleCitationAudio(e.target.checked)}
+                        className="w-4 h-4 accent-brand-olive rounded cursor-pointer"
+                      />
+                      <span>قراءة الشاهد الداعم صوتياً</span>
+                    </span>
+                    <span className="text-[10px] opacity-65">
+                      {activeCitation && includeCitationInAudio ? 'مقروء' : 'صامت'}
+                    </span>
+                  </label>
                 </div>
               </div>
 
@@ -1010,6 +1123,33 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
                       <button
                         type="button"
                         disabled={exporting}
+                        onClick={() => handleSelectVisualLayout('simple-vertical')}
+                        className={`w-full py-2.5 px-3 rounded-xl text-right border transition-all cursor-pointer flex items-center justify-between gap-2 disabled:opacity-50 ${
+                          visualLayout === 'simple-vertical'
+                            ? 'bg-brand-gold text-zinc-950 border-brand-gold shadow-sm'
+                            : darkMode
+                            ? 'bg-zinc-900 border-zinc-800 text-zinc-200 hover:border-brand-gold/50'
+                            : 'bg-white border-brand-olive/20 text-brand-ink hover:border-brand-olive/45'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-extrabold leading-snug">
+                            وضع بسيط (صورة عمودية كاملة + الآية فقط)
+                          </p>
+                          <p
+                            className={`text-[10px] mt-0.5 ${
+                              visualLayout === 'simple-vertical' ? 'text-zinc-900/80' : 'opacity-65'
+                            }`}
+                          >
+                            النص القرآني فقط كما في المنشور مع قراءة الخاطرة والشاهد حسب اختيارك
+                          </p>
+                        </div>
+                        {visualLayout === 'simple-vertical' && <Check className="w-4 h-4 shrink-0" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={exporting}
                         onClick={() => handleSelectVisualLayout('verse-synced')}
                         className={`w-full py-2.5 px-3 rounded-xl text-right border transition-all cursor-pointer flex items-center justify-between gap-2 disabled:opacity-50 ${
                           visualLayout === 'verse-synced'
@@ -1021,14 +1161,14 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
                       >
                         <div className="min-w-0">
                           <p className="text-[11px] font-extrabold leading-snug">
-                            الآية فقط على الصورة + الخاطرة بالصوت
+                            الآية على الصورة + ظهور الخاطرة متزامناً
                           </p>
                           <p
                             className={`text-[10px] mt-0.5 ${
                               visualLayout === 'verse-synced' ? 'text-zinc-900/80' : 'opacity-65'
                             }`}
                           >
-                            صورة نقية للآية وظهور الخاطرة متزامناً دون تزاحم
+                            عرض متتابع للخاطرة جملة جملة أو كلمة كلمة مع الصوت
                           </p>
                         </div>
                         {visualLayout === 'verse-synced' && <Check className="w-4 h-4 shrink-0" />}
@@ -1065,6 +1205,18 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
                         </button>
                       </div>
                     </div>
+
+                    {visualLayout === 'simple-vertical' && (
+                      <div
+                        className={`mt-2 p-2.5 rounded-xl border text-[11px] leading-relaxed ${
+                          darkMode
+                            ? 'bg-zinc-900/80 border-brand-gold/30 text-zinc-300'
+                            : 'bg-brand-cream/40 border-brand-olive/20 text-brand-ink/80'
+                        }`}
+                      >
+                        يظهر على الصورة العمودية الكاملة النص القرآني فقط كما في المنشور، ويمكنك تفعيل أو إيقاف قراءة الخاطرة والشاهد الداعم من الخيارات الصوتية أعلاه.
+                      </div>
+                    )}
 
                     {visualLayout === 'verse-synced' && (
                       <div
@@ -1144,7 +1296,7 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
                               <button
                                 type="button"
                                 disabled={exporting}
-                                onClick={() => setAudioMode('full')}
+                                onClick={() => handleSelectAudioPreset('full')}
                                 className="shrink-0 px-2 py-1 rounded-md bg-brand-olive text-white font-bold cursor-pointer hover:bg-brand-olive/90"
                               >
                                 تفعيل الصوت
@@ -1166,21 +1318,27 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-bold flex items-center gap-1.5 text-brand-olive dark:text-brand-gold">
                           <Quote className="w-3.5 h-3.5" />
-                          <span>الشاهد الداعم داخل الفيديو</span>
+                          <span>
+                            {visualLayout === 'simple-vertical'
+                              ? 'اختيار الشاهد الداعم (للصوت)'
+                              : 'الشاهد الداعم داخل الفيديو'}
+                          </span>
                         </span>
-                        <label className="flex items-center gap-1.5 text-[11px] font-bold cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            disabled={exporting}
-                            checked={effectiveShowCitation}
-                            onChange={(e) => handleToggleCitation(e.target.checked)}
-                            className="w-4 h-4 accent-brand-olive rounded cursor-pointer"
-                          />
-                          <span>{effectiveShowCitation ? 'ظاهر' : 'مخفي'}</span>
-                        </label>
+                        {visualLayout !== 'simple-vertical' && (
+                          <label className="flex items-center gap-1.5 text-[11px] font-bold cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              disabled={exporting}
+                              checked={effectiveShowCitation}
+                              onChange={(e) => handleToggleCitation(e.target.checked)}
+                              className="w-4 h-4 accent-brand-olive rounded cursor-pointer"
+                            />
+                            <span>{effectiveShowCitation ? 'ظاهر' : 'مخفي'}</span>
+                          </label>
+                        )}
                       </div>
 
-                      {effectiveShowCitation && (
+                      {(effectiveShowCitation || visualLayout === 'simple-vertical') && (
                         <>
                           <div className="flex flex-wrap gap-1.5">
                             {citations.map((cit, idx) => (
@@ -1208,23 +1366,14 @@ export const VideoStudioModal: React.FC<VideoStudioModalProps> = ({
                                 type="checkbox"
                                 disabled={exporting}
                                 checked={includeCitationInAudio}
-                                onChange={(e) => {
-                                  stopPreviewPlayback();
-                                  setExportedVideoUrl(null);
-                                  setExportedVideoBlob(null);
-                                  const next = e.target.checked;
-                                  setIncludeCitationInAudio(next);
-                                  if (next && audioMode === 'verse' && post.content?.trim()) {
-                                    setAudioMode('full');
-                                  }
-                                }}
+                                onChange={(e) => handleToggleCitationAudio(e.target.checked)}
                                 className="w-4 h-4 accent-brand-olive rounded cursor-pointer"
                               />
-                              <span>قراءة الشاهد صوتياً مع النص</span>
+                              <span>قراءة الشاهد الداعم صوتياً</span>
                             </span>
-                            {audioMode === 'verse' && includeCitationInAudio && (
-                              <span className="text-[10px] opacity-65">يُقرأ مع وضع النص</span>
-                            )}
+                            <span className="text-[10px] opacity-65">
+                              {includeCitationInAudio ? 'مفعّل' : 'متوقف'}
+                            </span>
                           </label>
                         </>
                       )}
