@@ -1,0 +1,8 @@
+{
+  "name": " نور4- صانع المنشورات الدينية",
+  "description": "تطبيق لتوليد منشورات دينية إبداعية للفيس بوك باستخدام الذكاء الاصطناعي، مع صور معبرة ونصوص قرآنية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
