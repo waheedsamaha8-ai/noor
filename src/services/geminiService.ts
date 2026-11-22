@@ -4,7 +4,13 @@ import {
   getLocalFallbackPost,
 } from './localArchive';
 import { SupportingCitation } from '../utils/categoryEditorial';
-import { getReciterById, parseQuranReference } from '../utils/quranData';
+import {
+  SURAH_NAMES_AR,
+  buildCorsQuranAudioUrls,
+  getReciterById,
+  normalizeArabic,
+  parseQuranReference,
+} from '../utils/quranData';
 import {
   buildGeminiRequestContext,
   recordGeminiResponseRotation,
@@ -143,6 +149,40 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+const directQuranCache = new Map<string, QuranRecitationResponse>();
+
+async function resolveVerseByTextDirect(
+  verseText?: string
+): Promise<{ surah: number; ayahStart: number; ayahEnd: number; surahNameAr: string } | null> {
+  const cleaned = normalizeArabic(verseText || '');
+  if (!cleaned || cleaned.length < 8) return null;
+  const words = cleaned.split(' ').filter((w) => w.length > 1);
+  if (words.length < 2) return null;
+  const query = words.slice(0, Math.min(6, words.length)).join(' ');
+
+  try {
+    const resp = await fetch(
+      `https://api.alquran.cloud/v1/search/${encodeURIComponent(query)}/all/quran-simple-clean`
+    );
+    if (!resp.ok) return null;
+    const data = await safeReadJson<{
+      data?: { matches?: Array<{ surah?: { number?: number }; numberInSurah?: number }> };
+    }>(resp);
+    const match = data?.data?.matches?.[0];
+    const surah = match?.surah?.number;
+    const ayah = match?.numberInSurah;
+    if (!surah || !ayah || surah < 1 || surah > 114) return null;
+    return {
+      surah,
+      ayahStart: ayah,
+      ayahEnd: ayah,
+      surahNameAr: SURAH_NAMES_AR[surah - 1] || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function fetchDirectQuranRecitation(params: {
   surahNumber?: number;
   surahName?: string;
@@ -152,41 +192,54 @@ async function fetchDirectQuranRecitation(params: {
   reciter?: string;
 }): Promise<QuranRecitationResponse | null> {
   const reciter = getReciterById(params.reciter);
-  const parsed = parseQuranReference(params);
+  const parsed = parseQuranReference(params) || (await resolveVerseByTextDirect(params.verseText));
   if (!parsed) return null;
+
+  const ayahEnd = Math.min(parsed.ayahEnd, parsed.ayahStart + 9);
+  const cacheKey = `${reciter.id}:${parsed.surah}:${parsed.ayahStart}-${ayahEnd}`;
+  const cached = directQuranCache.get(cacheKey);
+  if (cached) return cached;
 
   try {
     const clips: Array<{ ayah: number; base64: string; mimeType: string }> = [];
-    for (let ayah = parsed.ayahStart; ayah <= parsed.ayahEnd; ayah++) {
-      const metaResp = await fetch(
-        `https://api.alquran.cloud/v1/ayah/${parsed.surah}:${ayah}/${reciter.id}`
-      );
-      if (!metaResp.ok) continue;
-      const meta = await safeReadJson<{ data?: { audio?: string; audioSecondary?: string[] } }>(metaResp);
-      const audioUrl = meta?.data?.audio || meta?.data?.audioSecondary?.[0];
-      if (!audioUrl) continue;
+    for (let ayah = parsed.ayahStart; ayah <= ayahEnd; ayah++) {
+      const candidateUrls = buildCorsQuranAudioUrls(reciter.id, parsed.surah, ayah);
+      let fetched = false;
 
-      const audioResp = await fetch(audioUrl);
-      if (!audioResp.ok) continue;
-      const arrBuf = await audioResp.arrayBuffer();
-      clips.push({
-        ayah,
-        base64: uint8ArrayToBase64(new Uint8Array(arrBuf)),
-        mimeType: audioResp.headers.get('content-type') || 'audio/mpeg',
-      });
+      for (const audioUrl of candidateUrls) {
+        try {
+          const audioResp = await fetch(audioUrl, { mode: 'cors' });
+          if (!audioResp.ok) continue;
+          const arrBuf = await audioResp.arrayBuffer();
+          if (arrBuf.byteLength < 256) continue;
+          clips.push({
+            ayah,
+            base64: uint8ArrayToBase64(new Uint8Array(arrBuf)),
+            mimeType: audioResp.headers.get('content-type') || 'audio/mpeg',
+          });
+          fetched = true;
+          break;
+        } catch {
+          // Try next CORS-enabled mirror
+        }
+      }
+
+      if (!fetched) continue;
     }
 
     if (clips.length === 0) return null;
-    return {
+    const result: QuranRecitationResponse = {
       resolved: true,
       surah: parsed.surah,
       ayahStart: parsed.ayahStart,
-      ayahEnd: parsed.ayahEnd,
+      ayahEnd,
       surahNameAr: parsed.surahNameAr,
       reciterId: reciter.id,
       reciterName: reciter.name,
       clips,
     };
+    directQuranCache.set(cacheKey, result);
+    return result;
   } catch {
     return null;
   }

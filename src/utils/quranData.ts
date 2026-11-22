@@ -4,6 +4,8 @@ export interface QuranReciter {
   shortName: string;
   style: string;
   bitrateLabel: string;
+  everyAyahFolder: string;
+  mirrorFolder: string;
 }
 
 export const QURAN_RECITERS: readonly QuranReciter[] = [
@@ -13,6 +15,8 @@ export const QURAN_RECITERS: readonly QuranReciter[] = [
     shortName: 'مشاري العفاسي',
     style: 'تلاوة عذبة ونقية ومحببة للقلوب',
     bitrateLabel: '128 kbps',
+    everyAyahFolder: 'Alafasy_128kbps',
+    mirrorFolder: 'Alafasy_128kbps',
   },
   {
     id: 'ar.abdulbasitmurattal',
@@ -20,6 +24,8 @@ export const QURAN_RECITERS: readonly QuranReciter[] = [
     shortName: 'عبد الباسط عبد الصمد',
     style: 'مرتّل · المدرسة المصرية الأصيلة',
     bitrateLabel: '192 kbps',
+    everyAyahFolder: 'Abdul_Basit_Murattal_192kbps',
+    mirrorFolder: 'Abdul_Basit_Murattal_192kbps',
   },
   {
     id: 'ar.minshawi',
@@ -27,6 +33,8 @@ export const QURAN_RECITERS: readonly QuranReciter[] = [
     shortName: 'محمد صديق المنشاوي',
     style: 'صوت خاشع ومؤثر يلامس الوجدان',
     bitrateLabel: '128 kbps',
+    everyAyahFolder: 'Minshawy_Murattal_128kbps',
+    mirrorFolder: 'Minshawy_Murattal_128kbps',
   },
   {
     id: 'ar.husary',
@@ -34,6 +42,8 @@ export const QURAN_RECITERS: readonly QuranReciter[] = [
     shortName: 'محمود خليل الحصري',
     style: 'أداء متقن ووقور بأحكام التجويد',
     bitrateLabel: '128 kbps',
+    everyAyahFolder: 'Husary_128kbps',
+    mirrorFolder: 'Husary_128kbps',
   },
   {
     id: 'ar.mahermuaiqly',
@@ -41,13 +51,17 @@ export const QURAN_RECITERS: readonly QuranReciter[] = [
     shortName: 'ماهر المعيقلي',
     style: 'تلاوة الحرم المكي الهادئة الصافية',
     bitrateLabel: '128 kbps',
+    everyAyahFolder: 'MaherAlMuaiqly128kbps',
+    mirrorFolder: 'Maher_AlMuaiqly_64kbps',
   },
   {
     id: 'ar.saoodshuraym',
     name: 'الشيخ سعود الشريم',
     shortName: 'سعود الشريم',
     style: 'نبرة جليلة ومهيبة وسلسة',
-    bitrateLabel: '64 kbps',
+    bitrateLabel: '128 kbps',
+    everyAyahFolder: 'Saood_ash-Shuraym_128kbps',
+    mirrorFolder: 'Saood_ash-Shuraym_128kbps',
   },
 ] as const;
 
@@ -57,6 +71,25 @@ export const ALLOWED_RECITER_IDS = new Set<string>(QURAN_RECITERS.map((r) => r.i
 
 export const getReciterById = (id?: string): QuranReciter => {
   return QURAN_RECITERS.find((r) => r.id === id) || QURAN_RECITERS[0];
+};
+
+/**
+ * Builds CORS-enabled (`Access-Control-Allow-Origin: *`) MP3 URLs for a Quran ayah
+ * so browser-side playback and Web Audio decoding work cleanly on static hosts like GitHub Pages.
+ */
+export const buildCorsQuranAudioUrls = (
+  reciterId: string | undefined,
+  surah: number,
+  ayah: number
+): string[] => {
+  const reciter = getReciterById(reciterId);
+  const sss = String(surah).padStart(3, '0');
+  const aaa = String(ayah).padStart(3, '0');
+  const fileName = `${sss}${aaa}.mp3`;
+  return [
+    `https://everyayah.com/data/${reciter.everyAyahFolder}/${fileName}`,
+    `https://mirrors.quranicaudio.com/everyayah/${reciter.mirrorFolder}/${fileName}`,
+  ];
 };
 
 // Complete 114 Surahs (1-indexed via array index + 1)
